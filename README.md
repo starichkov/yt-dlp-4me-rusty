@@ -1,7 +1,7 @@
 # yt-dlp Markdown Wrapper (Rust)
 
 [![Author](https://img.shields.io/badge/Author-Vadim%20Starichkov-blue?style=for-the-badge)](https://github.com/starichkov)
-[![GitHub License](https://img.shields.io/github/license/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](LICENSE.md)
+[![GitHub License](https://img.shields.io/github/license/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](https://github.com/starichkov/yt-dlp-4me-rusty/blob/main/LICENSE.md)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/starichkov/yt-dlp-4me-rusty/rust.yml?style=for-the-badge)](https://github.com/starichkov/yt-dlp-4me-rusty/actions/workflows/rust.yml)
 ![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)
 
