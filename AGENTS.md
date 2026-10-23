@@ -13,6 +13,7 @@
 - `tests/queue.rs` — integration tests for Markdown behavior.
 - `.github/workflows/rust.yml` — formatting, compilation, tests, Clippy, and Rustdoc CI.
 - `README.md` — user-facing installation and usage documentation.
+- `LICENSE.md` — MIT license and Vadim Starichkov / TemplateTasks attribution.
 
 ## Build and validation
 

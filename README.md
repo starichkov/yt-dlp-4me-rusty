@@ -1,5 +1,6 @@
 # yt-dlp Markdown Wrapper (Rust)
 
+[![GitHub License](https://img.shields.io/github/license/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](LICENSE.md)
 ![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/starichkov/yt-dlp-4me-rusty/rust.yml?style=for-the-badge)](https://github.com/starichkov/yt-dlp-4me-rusty/actions/workflows/rust.yml)
 
@@ -122,4 +123,16 @@ cargo doc --no-deps --open
 
 ## Attribution
 
-This project is based on the behavior of [yt-dlp-4me](https://github.com/starichkov/yt-dlp-4me), the original Python implementation by Vadim Starichkov. See the upstream project for its license and attribution details.
+This project is licensed under the [MIT License](LICENSE.md).
+
+It is based on the behavior of [yt-dlp-4me](https://github.com/starichkov/yt-dlp-4me), the original Python implementation by Vadim Starichkov and TemplateTasks.
+
+If you use this code in your own projects, attribution is required under the MIT License:
+
+```text
+Based on yt-dlp-4me by Vadim Starichkov, TemplateTasks
+
+https://github.com/starichkov/yt-dlp-4me
+```
+
+Copyright © 2026 Vadim Starichkov, TemplateTasks.
