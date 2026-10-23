@@ -1,8 +1,9 @@
 # yt-dlp Markdown Wrapper (Rust)
 
+[![Author](https://img.shields.io/badge/Author-Vadim%20Starichkov-blue?style=for-the-badge)](https://github.com/starichkov)
 [![GitHub License](https://img.shields.io/github/license/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](LICENSE.md)
-![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/starichkov/yt-dlp-4me-rusty/rust.yml?style=for-the-badge)](https://github.com/starichkov/yt-dlp-4me-rusty/actions/workflows/rust.yml)
+![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)
 
 A Rust command-line wrapper for [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) that manages a video download queue in a Markdown file. It is the Rust counterpart of the original [Python project](https://github.com/starichkov/yt-dlp-4me).
 
