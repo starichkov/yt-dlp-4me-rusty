@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use yt_dlp_4me_rusty::{
-    Section, cleanup_markdown, extract_link, move_link_to_section, parse_markdown,
+    MarkdownFile, QueueFile, Section, cleanup_markdown, extract_link, move_link_to_section,
+    parse_markdown,
 };
 
 fn temp_file(content: &str) -> PathBuf {
@@ -54,5 +55,17 @@ fn moves_link_and_creates_section() {
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains("## Downloaded\n- https://x"));
     assert!(!text.contains("Not downloaded yet\n- https://x"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn reads_markdown_through_file_interface() {
+    let path = temp_file("## Downloaded\n- https://example.com/video\n");
+    let file = MarkdownFile::read(&path).unwrap();
+    assert_eq!(file.lines()[1].0, Section::Downloaded);
+    assert_eq!(
+        extract_link(&file.lines()[1].1),
+        Some("https://example.com/video".into())
+    );
     let _ = fs::remove_file(path);
 }

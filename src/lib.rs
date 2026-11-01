@@ -1,9 +1,13 @@
 use std::collections::HashSet;
 use std::env;
-use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+mod file;
+
+pub use file::{MarkdownFile, QueueFile, extract_link, parse_markdown};
+use file::{is_header, links_in_section, write_lines};
 
 /// Name of the section containing successfully downloaded links.
 pub const DOWNLOADED: &str = "Downloaded";
@@ -11,7 +15,6 @@ pub const DOWNLOADED: &str = "Downloaded";
 pub const FAILED: &str = "Failed";
 /// Name of the section containing links waiting to be downloaded.
 pub const PENDING: &str = "Not downloaded yet";
-const URL_PREFIXES: [&str; 2] = ["http://", "https://"];
 
 /// A logical section in the Markdown queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,82 +66,6 @@ fn dirs_home() -> PathBuf {
     env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
-fn header_kind(line: &str) -> Option<Section> {
-    let s = line.trim();
-    let hashes = s.chars().take_while(|c| *c == '#').count();
-    if hashes == 0 || hashes > 2 || s.chars().nth(hashes) == Some('#') {
-        return None;
-    }
-    let name = s[hashes..].trim().to_ascii_lowercase();
-    if name.starts_with(DOWNLOADED.to_ascii_lowercase().as_str()) {
-        Some(Section::Downloaded)
-    } else if name.starts_with(FAILED.to_ascii_lowercase().as_str()) {
-        Some(Section::Failed)
-    } else if name.starts_with(PENDING.to_ascii_lowercase().as_str()) {
-        Some(Section::Pending)
-    } else {
-        Some(Section::Other)
-    }
-}
-
-/// Parses a queue into `(section, line)` pairs while preserving line text.
-pub fn parse_markdown(path: impl AsRef<Path>) -> Vec<(Section, String)> {
-    let path = expand_path(path.as_ref().to_string_lossy().as_ref());
-    let Ok(content) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let mut section = Section::Other;
-    let mut lines: Vec<String> = content.split_inclusive('\n').map(str::to_string).collect();
-    if !content.is_empty()
-        && !content.ends_with(['\n', '\r'])
-        && let Some(last) = lines.last_mut()
-    {
-        last.push('\n');
-    }
-    lines
-        .into_iter()
-        .map(|text| {
-            if let Some(kind) = header_kind(&text) {
-                section = kind;
-            }
-            (section, text)
-        })
-        .collect()
-}
-
-/// Extracts the first HTTP or HTTPS URL from a Markdown line.
-pub fn extract_link(line: &str) -> Option<String> {
-    let start = URL_PREFIXES
-        .iter()
-        .filter_map(|prefix| line.find(prefix))
-        .min()?;
-    let end = line[start..]
-        .char_indices()
-        .find(|(_, c)| c.is_whitespace() || ")]>'\",".contains(*c))
-        .map(|(i, _)| start + i)
-        .unwrap_or(line.len());
-    if end == start {
-        None
-    } else {
-        Some(line[start..end].to_string())
-    }
-}
-
-fn write_map(path: &Path, map: &[(Section, String)]) -> std::io::Result<()> {
-    let mut out = String::new();
-    for (_, line) in map {
-        out.push_str(line);
-    }
-    fs::write(path, out)
-}
-
-fn links_in_section(map: &[(Section, String)], section: Section) -> HashSet<String> {
-    map.iter()
-        .filter(|(current, _)| *current == section)
-        .filter_map(|(_, line)| extract_link(line))
-        .collect()
-}
-
 /// Moves one link from `source` to `target`, creating the target section when needed.
 pub fn move_link_to_section(
     path: impl AsRef<Path>,
@@ -160,7 +87,7 @@ pub fn move_link_to_section(
     };
     if let Some(header) = map
         .iter()
-        .position(|(s, l)| *s == target && header_kind(l) == Some(target))
+        .position(|(s, l)| *s == target && is_header(l, target))
     {
         let mut insert = header + 1;
         while insert < map.len() && map[insert].0 == target {
@@ -178,7 +105,7 @@ pub fn move_link_to_section(
         map.push((target, format!("{target_header}\n")));
         map.push((target, moving.1));
     }
-    write_map(&path, &map)
+    write_lines(&path, map)
 }
 
 /// Removes duplicate links, preferring downloaded links over failed and pending links.
@@ -209,7 +136,7 @@ pub fn cleanup_markdown(path: impl AsRef<Path>) -> std::io::Result<()> {
             result.push((section, line));
         }
     }
-    write_map(&path, &result)
+    write_lines(&path, result)
 }
 
 /// Runs `yt-dlp` and returns `(success, already_existed, gone_410)`.

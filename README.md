@@ -36,6 +36,9 @@ cargo install --path .
 
 Alternatively, build and run locally with `cargo run --`.
 
+For Rust build profiles, release binaries, and development checks, see
+[`BUILD.md`](BUILD.md).
+
 ## Usage
 
 ```bash
@@ -99,28 +102,6 @@ Other Markdown content is preserved. Links can be plain URLs or labeled Markdown
 ```
 
 Before processing, duplicate links are removed. A link in `Downloaded` wins over the same link in `Failed`, and a link in `Failed` wins over one still pending.
-
-## Development
-
-Run the same checks used by GitHub Actions:
-
-```bash
-cargo fmt --all -- --check
-cargo check --all-targets
-cargo test --all-targets
-cargo clippy --all-targets --all-features -- -D warnings
-cargo doc --no-deps
-```
-
-The reusable queue implementation is in `src/lib.rs`, the executable entry point is in `src/main.rs`, and integration tests are in `tests/queue.rs`.
-
-## Rustdoc
-
-Generate local API documentation with:
-
-```bash
-cargo doc --no-deps --open
-```
 
 ## Attribution
 
