@@ -2,7 +2,20 @@
 name = "yt-dlp-4me-rusty"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Vadim Starichkov", "TemplateTasks"]
+description = "A Markdown queue manager and yt-dlp wrapper"
+readme = "README.md"
 license = "MIT"
+repository = "https://github.com/starichkov/yt-dlp-4me-rusty"
+homepage = "https://github.com/starichkov/yt-dlp-4me-rusty"
+keywords = ["yt-dlp", "markdown", "queue", "downloader", "cli"]
+categories = ["command-line-utilities"]
 
 [dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[package.metadata.badges]
+author = { label = "Author", message = "Vadim Starichkov", url = "https://github.com/starichkov", image = "https://img.shields.io/badge/Author-Vadim%20Starichkov-blue?style=for-the-badge" }
