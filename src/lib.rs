@@ -22,6 +22,21 @@ pub enum Section {
     Other,
 }
 
+impl Section {
+    fn name(self) -> Option<&'static str> {
+        match self {
+            Self::Downloaded => Some(DOWNLOADED),
+            Self::Failed => Some(FAILED),
+            Self::Pending => Some(PENDING),
+            Self::Other => None,
+        }
+    }
+
+    fn header(self) -> Option<String> {
+        self.name().map(|name| format!("## {name}"))
+    }
+}
+
 /// The operation to perform on the queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -55,11 +70,11 @@ fn header_kind(line: &str) -> Option<Section> {
         return None;
     }
     let name = s[hashes..].trim().to_ascii_lowercase();
-    if name.starts_with("downloaded") {
+    if name.starts_with(DOWNLOADED.to_ascii_lowercase().as_str()) {
         Some(Section::Downloaded)
-    } else if name.starts_with("failed") {
+    } else if name.starts_with(FAILED.to_ascii_lowercase().as_str()) {
         Some(Section::Failed)
-    } else if name.starts_with("not downloaded yet") {
+    } else if name.starts_with(PENDING.to_ascii_lowercase().as_str()) {
         Some(Section::Pending)
     } else {
         Some(Section::Other)
@@ -117,6 +132,13 @@ fn write_map(path: &Path, map: &[(Section, String)]) -> std::io::Result<()> {
     fs::write(path, out)
 }
 
+fn links_in_section(map: &[(Section, String)], section: Section) -> HashSet<String> {
+    map.iter()
+        .filter(|(current, _)| *current == section)
+        .filter_map(|(_, line)| extract_link(line))
+        .collect()
+}
+
 /// Moves one link from `source` to `target`, creating the target section when needed.
 pub fn move_link_to_section(
     path: impl AsRef<Path>,
@@ -133,11 +155,8 @@ pub fn move_link_to_section(
         return Ok(());
     };
     let moving = map.remove(found);
-    let target_header = match target {
-        Section::Downloaded => "## Downloaded",
-        Section::Failed => "## Failed",
-        Section::Pending => "## Not downloaded yet",
-        Section::Other => return Ok(()),
+    let Some(target_header) = target.header() else {
+        return Ok(());
     };
     if let Some(header) = map
         .iter()
@@ -169,16 +188,8 @@ pub fn cleanup_markdown(path: impl AsRef<Path>) -> std::io::Result<()> {
     if map.is_empty() {
         return Ok(());
     }
-    let downloaded: HashSet<String> = map
-        .iter()
-        .filter(|(s, _)| *s == Section::Downloaded)
-        .filter_map(|(_, l)| extract_link(l))
-        .collect();
-    let failed: HashSet<String> = map
-        .iter()
-        .filter(|(s, _)| *s == Section::Failed)
-        .filter_map(|(_, l)| extract_link(l))
-        .collect();
+    let downloaded = links_in_section(&map, Section::Downloaded);
+    let failed = links_in_section(&map, Section::Failed);
     let mut seen = HashSet::new();
     let mut result = Vec::new();
     for (section, line) in map {
@@ -218,14 +229,14 @@ pub fn download_video(link: &str, output: &Path, executable: &Path) -> (bool, bo
     let mut gone = false;
     if let Some(stdout) = child.stdout.take() {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            already |= line.contains("has already been downloaded");
-            gone |= line.contains("HTTP Error 410") || line.contains("410 Gone");
+            already |= is_already_downloaded(&line);
+            gone |= is_gone(&line);
             println!("{line}");
         }
     }
     if let Some(stderr) = child.stderr.take() {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            gone |= line.contains("HTTP Error 410") || line.contains("410 Gone");
+            gone |= is_gone(&line);
             eprintln!("{line}");
         }
     }
@@ -234,6 +245,14 @@ pub fn download_video(link: &str, output: &Path, executable: &Path) -> (bool, bo
         already,
         gone,
     )
+}
+
+fn is_already_downloaded(line: &str) -> bool {
+    line.contains("has already been downloaded")
+}
+
+fn is_gone(line: &str) -> bool {
+    line.contains("HTTP Error 410") || line.contains("410 Gone")
 }
 
 /// Processes links in the section selected by `mode` until no links remain.
