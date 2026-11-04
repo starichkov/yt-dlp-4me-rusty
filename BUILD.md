@@ -52,6 +52,14 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo doc --no-deps
 ```
 
+To generate an LCOV coverage report locally, install `cargo-llvm-cov` and run:
+
+```bash
+cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+```
+
+GitHub Actions uploads this report to Codecov after the coverage job completes.
+
 To generate and open local API documentation:
 
 ```bash

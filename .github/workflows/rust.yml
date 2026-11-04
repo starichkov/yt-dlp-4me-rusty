@@ -34,3 +34,30 @@ jobs:
 
       - name: Build documentation
         run: cargo doc --no-deps
+
+  coverage:
+    name: Generate and upload coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: starichkov/yt-dlp-4me-rusty
+          files: lcov.info
+          disable_search: true
+          fail_ci_if_error: true
