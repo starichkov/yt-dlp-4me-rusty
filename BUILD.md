@@ -69,10 +69,10 @@ cargo doc --no-deps --open
 ## Project layout
 
 - `src/lib.rs` — reusable queue processing and download logic.
-- `src/file.rs` — queue file abstraction and Markdown implementation.
+- `src/file.rs` — queue file abstraction plus Markdown and plain-text implementations.
 - `src/main.rs` — command-line entry point.
 - `tests/queue.rs` — integration tests for observable queue behavior.
 
-Queue processing uses the `QueueFile` trait, with `MarkdownFile` as the
-current implementation. New file formats can implement that trait without
-changing download, cleanup, or queue movement logic.
+Queue processing uses the `QueueFile` trait, with `MarkdownFile` and `TextFile`
+implementations selected by the input file extension. New file formats can
+implement that trait without changing download logic.

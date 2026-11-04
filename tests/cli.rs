@@ -142,6 +142,56 @@ fn reports_downloader_failure_and_moves_link_to_failed() {
 }
 
 #[test]
+fn processes_plain_text_queue_and_reports_missing_downloader() {
+    let queue = std::env::temp_dir().join(format!(
+        "yt-dlp-cli-text-queue-{}.TXT",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let output = unique_path("yt-dlp-cli-text-output");
+    fs::write(&queue, "phone note\nhttps://example.com/video\n").unwrap();
+
+    let result = run_cli(&[
+        &queue,
+        &output,
+        Path::new("--yt-dlp-path"),
+        Path::new("/tmp/yt-dlp-cli-no-such-executable"),
+    ]);
+
+    assert!(result.status.success());
+    assert!(String::from_utf8_lossy(&result.stdout).contains("Failed: 1"));
+    assert_eq!(
+        fs::read_to_string(&queue).unwrap(),
+        "phone note\nhttps://example.com/video\n"
+    );
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn reports_output_directory_creation_failure() {
+    let queue = unique_path("yt-dlp-cli-output-error-queue");
+    let output_file = unique_path("yt-dlp-cli-output-error-file");
+    fs::write(
+        &queue,
+        "## Not downloaded yet\n- https://example.com/video\n",
+    )
+    .unwrap();
+    fs::write(&output_file, "not a directory").unwrap();
+
+    let result = run_cli(&[&queue, &output_file]);
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("Error creating output directory"));
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(output_file);
+}
+
+#[test]
 fn reports_missing_arguments_and_input_file() {
     let missing_arguments = Command::new(env!("CARGO_BIN_EXE_yt-dlp-4me-rusty"))
         .arg("only-one-argument")

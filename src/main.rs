@@ -3,13 +3,13 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-use yt_dlp_4me_rusty::{Mode, cleanup_markdown, expand_path, process_queue};
+use yt_dlp_4me_rusty::{Mode, cleanup_queue, expand_path, process_queue};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         eprintln!(
-            "Usage: {} <queue_file.md> <output_directory> [--verify|--retry] [--yt-dlp-path PATH]",
+            "Usage: {} <queue_file.md|queue_file.txt> <output_directory> [--verify|--retry] [--yt-dlp-path PATH]",
             args.first().unwrap_or(&"yt-dlp-4me-rusty".into())
         );
         std::process::exit(2);
@@ -37,7 +37,7 @@ fn main() {
         eprintln!("Error creating output directory: {e}");
         std::process::exit(1);
     }
-    if let Err(e) = cleanup_markdown(&input) {
+    if let Err(e) = cleanup_queue(&input) {
         eprintln!("Error reading input file '{}': {e}", args[1]);
         std::process::exit(1);
     }

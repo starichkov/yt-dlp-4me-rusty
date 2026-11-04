@@ -8,9 +8,11 @@ use crate::{Section, expand_path};
 ///
 /// Implement this trait to add support for another queue file format without
 /// changing the queue-processing logic.
-pub trait QueueFile: Sized {
+pub trait QueueFile {
     /// Reads and parses a queue file.
-    fn read(path: &Path) -> io::Result<Self>;
+    fn read(path: &Path) -> io::Result<Self>
+    where
+        Self: Sized;
 
     /// Writes the queue representation to a file.
     fn write(&self, path: &Path) -> io::Result<()>;
@@ -79,6 +81,57 @@ impl QueueFile for MarkdownFile {
     }
 }
 
+/// The plain-text URL inbox implementation of [`QueueFile`].
+#[derive(Clone, Debug, Default)]
+pub struct TextFile {
+    lines: Vec<(Section, String)>,
+}
+
+impl TextFile {
+    /// Creates a plain-text inbox representation from parsed lines.
+    pub(crate) fn from_lines(lines: Vec<(Section, String)>) -> Self {
+        Self { lines }
+    }
+}
+
+impl QueueFile for TextFile {
+    fn read(path: &Path) -> io::Result<Self> {
+        let path = expand_path(path.to_string_lossy().as_ref());
+        let content = fs::read_to_string(path)?;
+        let mut lines: Vec<String> = content.split_inclusive('\n').map(str::to_string).collect();
+        if !content.is_empty()
+            && !content.ends_with(['\n', '\r'])
+            && let Some(last) = lines.last_mut()
+        {
+            last.push('\n');
+        }
+        Ok(Self::from_lines(
+            lines
+                .into_iter()
+                .map(|line| (Section::Pending, line))
+                .collect(),
+        ))
+    }
+
+    fn write(&self, path: &Path) -> io::Result<()> {
+        let path = expand_path(path.to_string_lossy().as_ref());
+        let content = self
+            .lines
+            .iter()
+            .map(|(_, line)| line.as_str())
+            .collect::<String>();
+        fs::write(path, content)
+    }
+
+    fn lines(&self) -> &[(Section, String)] {
+        &self.lines
+    }
+
+    fn lines_mut(&mut self) -> &mut Vec<(Section, String)> {
+        &mut self.lines
+    }
+}
+
 fn header_kind(line: &str) -> Option<Section> {
     let s = line.trim();
     let hashes = s.chars().take_while(|c| *c == '#').count();
@@ -100,6 +153,13 @@ fn header_kind(line: &str) -> Option<Section> {
 /// Parses a Markdown queue into `(section, line)` pairs.
 pub fn parse_markdown(path: impl AsRef<Path>) -> Vec<(Section, String)> {
     MarkdownFile::read(path.as_ref())
+        .map(|file| file.lines)
+        .unwrap_or_default()
+}
+
+/// Parses a plain-text URL inbox into `(section, line)` pairs.
+pub fn parse_text(path: impl AsRef<Path>) -> Vec<(Section, String)> {
+    TextFile::read(path.as_ref())
         .map(|file| file.lines)
         .unwrap_or_default()
 }

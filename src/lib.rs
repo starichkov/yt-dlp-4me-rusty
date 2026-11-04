@@ -7,7 +7,7 @@ use std::thread;
 
 mod file;
 
-pub use file::{MarkdownFile, QueueFile, extract_link, parse_markdown};
+pub use file::{MarkdownFile, QueueFile, TextFile, extract_link, parse_markdown, parse_text};
 use file::{is_header, links_in_section, write_lines};
 
 /// Name of the section containing successfully downloaded links.
@@ -140,6 +140,29 @@ pub fn cleanup_markdown(path: impl AsRef<Path>) -> std::io::Result<()> {
     write_lines(&path, result)
 }
 
+/// Removes duplicate URLs from a plain-text inbox, preserving the first occurrence.
+pub fn cleanup_text(path: impl AsRef<Path>) -> std::io::Result<()> {
+    let path = expand_path(path.as_ref().to_string_lossy().as_ref());
+    let file = TextFile::read(&path)?;
+    let mut seen = HashSet::new();
+    let lines = file
+        .lines()
+        .iter()
+        .filter(|(_, line)| extract_link(line).is_none_or(|link| seen.insert(link)))
+        .cloned()
+        .collect();
+    write_text_lines(&path, lines)
+}
+
+/// Removes duplicate URLs using the queue format selected by the file extension.
+pub fn cleanup_queue(path: impl AsRef<Path>) -> std::io::Result<()> {
+    if is_text_path(path.as_ref()) {
+        cleanup_text(path)
+    } else {
+        cleanup_markdown(path)
+    }
+}
+
 /// Runs `yt-dlp` and returns `(success, already_existed, gone_410)`.
 pub fn download_video(link: &str, output: &Path, executable: &Path) -> (bool, bool, bool) {
     println!("\n>>> Starting download: {link}");
@@ -220,7 +243,7 @@ pub fn process_queue(
     let mut bad = Vec::new();
     let mut skipped = Vec::new();
     loop {
-        let map = MarkdownFile::read(file)?.lines().to_vec();
+        let map = read_queue(file)?.lines().to_vec();
         let Some(link) = map
             .iter()
             .filter(|(s, _)| *s == source)
@@ -230,7 +253,7 @@ pub fn process_queue(
         };
         if ok.contains(&link) || skipped.contains(&link) {
             if mode != Mode::Verify {
-                move_link_to_section(file, &link, Section::Downloaded, source)?;
+                move_link_in_queue(file, &link, Section::Downloaded, source)?;
             } else {
                 break;
             }
@@ -247,13 +270,55 @@ pub fn process_queue(
                 ok.push(link.clone());
             }
             if mode != Mode::Verify {
-                move_link_to_section(file, &link, Section::Downloaded, source)?;
+                move_link_in_queue(file, &link, Section::Downloaded, source)?;
             }
         } else {
             let _ = gone;
             bad.push(link.clone());
-            move_link_to_section(file, &link, Section::Failed, source)?;
+            move_link_in_queue(file, &link, Section::Failed, source)?;
         }
     }
     Ok((ok, bad, skipped))
+}
+
+fn is_text_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
+}
+
+fn read_queue(path: &Path) -> std::io::Result<Box<dyn QueueFile>> {
+    if is_text_path(path) {
+        Ok(Box::new(TextFile::read(path)?))
+    } else {
+        Ok(Box::new(MarkdownFile::read(path)?))
+    }
+}
+
+fn move_link_in_queue(
+    path: &Path,
+    link: &str,
+    target: Section,
+    source: Section,
+) -> std::io::Result<()> {
+    if is_text_path(path) {
+        let file = TextFile::read(path)?;
+        if target != Section::Downloaded {
+            return Ok(());
+        }
+        let lines = file
+            .lines()
+            .iter()
+            .filter(|(section, line)| {
+                !(*section == source && extract_link(line).as_deref() == Some(link))
+            })
+            .cloned()
+            .collect();
+        write_text_lines(path, lines)
+    } else {
+        move_link_to_section(path, link, target, source)
+    }
+}
+
+fn write_text_lines(path: &Path, lines: Vec<(Section, String)>) -> std::io::Result<()> {
+    TextFile::from_lines(lines).write(path)
 }

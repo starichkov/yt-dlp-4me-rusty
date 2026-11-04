@@ -6,7 +6,7 @@
 [![Codecov](https://img.shields.io/codecov/c/github/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](https://codecov.io/gh/starichkov/yt-dlp-4me-rusty)
 ![Rust](https://img.shields.io/badge/Rust-2024-orange?style=for-the-badge)
 
-A Rust command-line wrapper for [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) that manages a video download queue in a Markdown file. It is the Rust counterpart of the original [Python project](https://github.com/starichkov/yt-dlp-4me).
+A Rust command-line wrapper for [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) that manages a video download queue in Markdown or plain text. It is the Rust counterpart of the original [Python project](https://github.com/starichkov/yt-dlp-4me).
 
 ## Features
 
@@ -43,7 +43,7 @@ For Rust build profiles, release binaries, and development checks, see
 ## Usage
 
 ```bash
-yt-dlp-4me-rusty <queue_file.md> <output_directory>
+yt-dlp-4me-rusty <queue_file.md|queue_file.txt> <output_directory>
 ```
 
 For example:
@@ -80,9 +80,11 @@ Use `cargo run --` instead of the installed command when developing:
 cargo run -- videos.md ./downloads
 ```
 
-## Queue format
+## Queue formats
 
-The wrapper recognizes these headers case-insensitively at Markdown heading levels one or two:
+### Markdown
+
+Files with a `.md` extension use a stateful Markdown queue. The wrapper recognizes these headers case-insensitively at Markdown heading levels one or two:
 
 - `## Not downloaded yet` — links waiting for a normal download run.
 - `## Downloaded` — links that succeeded, and links inspected by verify mode.
@@ -103,6 +105,17 @@ Other Markdown content is preserved. Links can be plain URLs or labeled Markdown
 ```
 
 Before processing, duplicate links are removed. A link in `Downloaded` wins over the same link in `Failed`, and a link in `Failed` wins over one still pending.
+
+### Plain text
+
+Files with a `.txt` extension use a simple URL inbox. Put one URL per line; non-URL lines are preserved and the first HTTP or HTTPS URL on each line is processed:
+
+```text
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://youtu.be/aqz-KE-bpKQ
+```
+
+Duplicate URLs are removed before processing. Successfully downloaded URLs are removed from the inbox, while failed URLs remain for a later run. Plain-text inboxes use normal download mode; the `--verify` and `--retry` modes apply to Markdown sections.
 
 ## Attribution
 
