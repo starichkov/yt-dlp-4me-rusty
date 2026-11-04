@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 use std::env;
-use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 
 mod file;
 
@@ -74,7 +75,7 @@ pub fn move_link_to_section(
     source: Section,
 ) -> std::io::Result<()> {
     let path = expand_path(path.as_ref().to_string_lossy().as_ref());
-    let mut map = parse_markdown(&path);
+    let mut map = MarkdownFile::read(&path)?.lines().to_vec();
     let Some(found) = map
         .iter()
         .position(|(s, l)| *s == source && extract_link(l).as_deref() == Some(link))
@@ -111,7 +112,7 @@ pub fn move_link_to_section(
 /// Removes duplicate links, preferring downloaded links over failed and pending links.
 pub fn cleanup_markdown(path: impl AsRef<Path>) -> std::io::Result<()> {
     let path = expand_path(path.as_ref().to_string_lossy().as_ref());
-    let map = parse_markdown(&path);
+    let map = MarkdownFile::read(&path)?.lines().to_vec();
     if map.is_empty() {
         return Ok(());
     }
@@ -152,26 +153,47 @@ pub fn download_video(link: &str, output: &Path, executable: &Path) -> (bool, bo
     let Ok(mut child) = child else {
         return (false, false, false);
     };
-    let mut already = false;
-    let mut gone = false;
-    if let Some(stdout) = child.stdout.take() {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            already |= is_already_downloaded(&line);
-            gone |= is_gone(&line);
-            println!("{line}");
-        }
-    }
-    if let Some(stderr) = child.stderr.take() {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            gone |= is_gone(&line);
-            eprintln!("{line}");
-        }
-    }
+    let stdout_thread = child
+        .stdout
+        .take()
+        .map(|stdout| thread::spawn(move || stream_output(stdout, false)));
+    let stderr_thread = child
+        .stderr
+        .take()
+        .map(|stderr| thread::spawn(move || stream_output(stderr, true)));
+    let (stdout_already, stdout_gone) = stdout_thread
+        .and_then(|thread| thread.join().ok())
+        .unwrap_or_default();
+    let (stderr_already, stderr_gone) = stderr_thread
+        .and_then(|thread| thread.join().ok())
+        .unwrap_or_default();
     (
         child.wait().map(|s| s.success()).unwrap_or(false),
-        already,
-        gone,
+        stdout_already || stderr_already,
+        stdout_gone || stderr_gone,
     )
+}
+
+fn stream_output<R: Read>(mut reader: R, is_stderr: bool) -> (bool, bool) {
+    let mut buffer = [0; 4096];
+    let mut output = Vec::new();
+    loop {
+        let count = match reader.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(count) => count,
+        };
+        output.extend_from_slice(&buffer[..count]);
+        let text = String::from_utf8_lossy(&buffer[..count]);
+        if is_stderr {
+            eprint!("{text}");
+            let _ = std::io::stderr().flush();
+        } else {
+            print!("{text}");
+            let _ = std::io::stdout().flush();
+        }
+    }
+    let text = String::from_utf8_lossy(&output);
+    (is_already_downloaded(&text), is_gone(&text))
 }
 
 fn is_already_downloaded(line: &str) -> bool {
@@ -188,7 +210,7 @@ pub fn process_queue(
     output: &Path,
     mode: Mode,
     executable: &Path,
-) -> (Vec<String>, Vec<String>, Vec<String>) {
+) -> std::io::Result<(Vec<String>, Vec<String>, Vec<String>)> {
     let source = match mode {
         Mode::Download => Section::Pending,
         Mode::Verify => Section::Downloaded,
@@ -198,17 +220,17 @@ pub fn process_queue(
     let mut bad = Vec::new();
     let mut skipped = Vec::new();
     loop {
-        let map = parse_markdown(file);
+        let map = MarkdownFile::read(file)?.lines().to_vec();
         let Some(link) = map
             .iter()
-            .find(|(s, _)| *s == source)
-            .and_then(|(_, l)| extract_link(l))
+            .filter(|(s, _)| *s == source)
+            .find_map(|(_, l)| extract_link(l))
         else {
             break;
         };
         if ok.contains(&link) || skipped.contains(&link) {
             if mode != Mode::Verify {
-                let _ = move_link_to_section(file, &link, Section::Downloaded, source);
+                move_link_to_section(file, &link, Section::Downloaded, source)?;
             } else {
                 break;
             }
@@ -225,13 +247,13 @@ pub fn process_queue(
                 ok.push(link.clone());
             }
             if mode != Mode::Verify {
-                let _ = move_link_to_section(file, &link, Section::Downloaded, source);
+                move_link_to_section(file, &link, Section::Downloaded, source)?;
             }
         } else {
             let _ = gone;
             bad.push(link.clone());
-            let _ = move_link_to_section(file, &link, Section::Failed, source);
+            move_link_to_section(file, &link, Section::Failed, source)?;
         }
     }
-    (ok, bad, skipped)
+    Ok((ok, bad, skipped))
 }

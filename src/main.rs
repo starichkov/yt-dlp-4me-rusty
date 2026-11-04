@@ -37,8 +37,17 @@ fn main() {
         eprintln!("Error creating output directory: {e}");
         std::process::exit(1);
     }
-    let _ = cleanup_markdown(&input);
-    let (ok, bad, skipped) = process_queue(&input, &output, mode, &executable);
+    if let Err(e) = cleanup_markdown(&input) {
+        eprintln!("Error reading input file '{}': {e}", args[1]);
+        std::process::exit(1);
+    }
+    let (ok, bad, skipped) = match process_queue(&input, &output, mode, &executable) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Error processing input file '{}': {e}", args[1]);
+            std::process::exit(1);
+        }
+    };
     println!(
         "\n========================================\nDOWNLOAD SUMMARY\n========================================\nSuccessfully downloaded: {}\nAlready existed: {}\nFailed: {}\n========================================",
         ok.len(),
