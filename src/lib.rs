@@ -157,7 +157,7 @@ pub fn cleanup_text(path: impl AsRef<Path>) -> std::io::Result<()> {
 /// Removes duplicate URLs using the queue format selected by the file extension.
 pub fn cleanup_queue(path: impl AsRef<Path>) -> std::io::Result<()> {
     if is_text_path(path.as_ref()) {
-        cleanup_text(path)
+        cleanup_text_states(path.as_ref())
     } else {
         cleanup_markdown(path)
     }
@@ -234,6 +234,7 @@ pub fn process_queue(
     mode: Mode,
     executable: &Path,
 ) -> std::io::Result<(Vec<String>, Vec<String>, Vec<String>)> {
+    let source_file = queue_path_for_mode(file, mode);
     let source = match mode {
         Mode::Download => Section::Pending,
         Mode::Verify => Section::Downloaded,
@@ -243,7 +244,18 @@ pub fn process_queue(
     let mut bad = Vec::new();
     let mut skipped = Vec::new();
     loop {
-        let map = read_queue(file)?.lines().to_vec();
+        if is_text_path(file) && !source_file.exists() {
+            break;
+        }
+        let map = if is_text_path(file) {
+            read_queue(&source_file)?
+                .lines()
+                .iter()
+                .map(|(_, line)| (source, line.clone()))
+                .collect()
+        } else {
+            read_queue(&source_file)?.lines().to_vec()
+        };
         let Some(link) = map
             .iter()
             .filter(|(s, _)| *s == source)
@@ -286,6 +298,52 @@ fn is_text_path(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("txt"))
 }
 
+fn text_state_path(path: &Path, state: &str) -> PathBuf {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("txt");
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("queue");
+    path.with_file_name(format!("{stem}.{state}.{extension}"))
+}
+
+fn queue_path_for_mode(path: &Path, mode: Mode) -> PathBuf {
+    if !is_text_path(path) {
+        return path.to_path_buf();
+    }
+    match mode {
+        Mode::Download => path.to_path_buf(),
+        Mode::Retry => text_state_path(path, "failed"),
+        Mode::Verify => text_state_path(path, "done"),
+    }
+}
+
+fn cleanup_text_states(path: &Path) -> std::io::Result<()> {
+    let paths = [
+        text_state_path(path, "done"),
+        text_state_path(path, "failed"),
+        path.to_path_buf(),
+    ];
+    let mut seen = HashSet::new();
+    for state_path in paths {
+        if !state_path.exists() {
+            continue;
+        }
+        let file = TextFile::read(&state_path)?;
+        let lines = file
+            .lines()
+            .iter()
+            .filter(|(_, line)| extract_link(line).is_none_or(|link| seen.insert(link)))
+            .cloned()
+            .collect();
+        write_text_lines(&state_path, lines)?;
+    }
+    Ok(())
+}
+
 fn read_queue(path: &Path) -> std::io::Result<Box<dyn QueueFile>> {
     if is_text_path(path) {
         Ok(Box::new(TextFile::read(path)?))
@@ -301,19 +359,45 @@ fn move_link_in_queue(
     source: Section,
 ) -> std::io::Result<()> {
     if is_text_path(path) {
-        let file = TextFile::read(path)?;
-        if target != Section::Downloaded {
+        if source == target {
             return Ok(());
         }
+        let source_path = queue_path_for_mode(
+            path,
+            match source {
+                Section::Pending => Mode::Download,
+                Section::Failed => Mode::Retry,
+                Section::Downloaded => Mode::Verify,
+                Section::Other => return Ok(()),
+            },
+        );
+        let file = TextFile::read(&source_path)?;
         let lines = file
             .lines()
             .iter()
-            .filter(|(section, line)| {
-                !(*section == source && extract_link(line).as_deref() == Some(link))
-            })
+            .filter(|(_, line)| extract_link(line).as_deref() != Some(link))
             .cloned()
             .collect();
-        write_text_lines(path, lines)
+        write_text_lines(&source_path, lines)?;
+        let target_path = match target {
+            Section::Downloaded => text_state_path(path, "done"),
+            Section::Failed => text_state_path(path, "failed"),
+            Section::Pending | Section::Other => return Ok(()),
+        };
+        let mut target_lines = if target_path.exists() {
+            TextFile::read(&target_path)?.lines().to_vec()
+        } else {
+            Vec::new()
+        };
+        target_lines.push((
+            Section::Pending,
+            file.lines()
+                .iter()
+                .find(|(_, line)| extract_link(line).as_deref() == Some(link))
+                .map(|(_, line)| line.clone())
+                .unwrap_or_else(|| format!("{link}\n")),
+        ));
+        write_text_lines(&target_path, target_lines)
     } else {
         move_link_to_section(path, link, target, source)
     }

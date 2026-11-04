@@ -162,12 +162,15 @@ fn processes_plain_text_queue_and_reports_missing_downloader() {
 
     assert!(result.status.success());
     assert!(String::from_utf8_lossy(&result.stdout).contains("Failed: 1"));
-    assert_eq!(
-        fs::read_to_string(&queue).unwrap(),
-        "phone note\nhttps://example.com/video\n"
-    );
+    assert_eq!(fs::read_to_string(&queue).unwrap(), "phone note\n");
+    let failed = queue.with_file_name(format!(
+        "{}.failed.TXT",
+        queue.file_stem().unwrap().to_string_lossy()
+    ));
+    assert!(failed.exists());
 
     let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(failed);
     let _ = fs::remove_dir_all(output);
 }
 
@@ -189,6 +192,27 @@ fn reports_output_directory_creation_failure() {
 
     let _ = fs::remove_file(queue);
     let _ = fs::remove_file(output_file);
+}
+
+#[test]
+fn reports_queue_cleanup_failure() {
+    let queue = unique_path("yt-dlp-cli-cleanup-error-queue").with_extension("txt");
+    let done = queue.with_file_name(format!(
+        "{}.done.txt",
+        queue.file_stem().unwrap().to_string_lossy()
+    ));
+    let output = unique_path("yt-dlp-cli-cleanup-error-output");
+    fs::write(&queue, "https://example.com/video\n").unwrap();
+    fs::create_dir(&done).unwrap();
+
+    let result = run_cli(&[&queue, &output]);
+
+    assert_eq!(result.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("Error reading input file"));
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_dir_all(done);
+    let _ = fs::remove_dir_all(output);
 }
 
 #[test]

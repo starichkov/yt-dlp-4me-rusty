@@ -30,6 +30,15 @@ fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
     ))
 }
 
+fn companion_path(path: &Path, state: &str) -> PathBuf {
+    path.with_file_name(format!(
+        "{}.{}.{}",
+        path.file_stem().unwrap().to_string_lossy(),
+        state,
+        path.extension().unwrap().to_string_lossy()
+    ))
+}
+
 fn fake_downloader(output: &str, success: bool) -> PathBuf {
     let path = temp_path("yt-dlp-fake", "sh");
     fs::write(
@@ -333,12 +342,11 @@ fn process_queue_moves_successful_downloads() {
 #[test]
 fn process_queue_removes_successful_plain_text_urls_and_keeps_failures() {
     let queue = temp_path("yt-dlp-text-queue", ".txt");
-    let failed_queue = temp_path("yt-dlp-text-failed-queue", ".txt");
+    let failed_queue = companion_path(&queue, "failed");
     let output = temp_path("yt-dlp-text-output", "dir");
     let successful_executable = fake_downloader("download complete", true);
     let failed_executable = fake_downloader("download failed", false);
     fs::write(&queue, "phone note\nhttps://example.com/success\n").unwrap();
-    fs::write(&failed_queue, "https://example.com/failure\n").unwrap();
 
     let result = process_queue(&queue, &output, Mode::Download, &successful_executable).unwrap();
     assert_eq!(result.0, vec!["https://example.com/success"]);
@@ -349,7 +357,8 @@ fn process_queue_removes_successful_plain_text_urls_and_keeps_failures() {
     );
     assert!(fs::read_to_string(&queue).unwrap().contains("phone note\n"));
 
-    let failed = process_queue(&failed_queue, &output, Mode::Download, &failed_executable).unwrap();
+    fs::write(&queue, "phone note\nhttps://example.com/failure\n").unwrap();
+    let failed = process_queue(&queue, &output, Mode::Download, &failed_executable).unwrap();
     assert!(failed.0.is_empty());
     assert_eq!(failed.1, vec!["https://example.com/failure"]);
     assert!(
@@ -362,6 +371,157 @@ fn process_queue_removes_successful_plain_text_urls_and_keeps_failures() {
     let _ = fs::remove_file(failed_queue);
     let _ = fs::remove_file(successful_executable);
     let _ = fs::remove_file(failed_executable);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn plain_text_retry_and_verify_use_companion_state_files() {
+    let queue = temp_path("yt-dlp-text-state", ".txt");
+    let failed = companion_path(&queue, "failed");
+    let done = companion_path(&queue, "done");
+    let output = temp_path("yt-dlp-text-state-output", "dir");
+    let executable = fake_downloader("ok", true);
+    fs::write(&queue, "pending note\nhttps://pending\n").unwrap();
+    fs::write(&failed, "failed note\nhttps://retry\n").unwrap();
+    fs::write(&done, "done note\nhttps://verify\n").unwrap();
+
+    let downloaded = process_queue(&queue, &output, Mode::Download, &executable).unwrap();
+    assert_eq!(downloaded.0, vec!["https://pending"]);
+    assert!(
+        !fs::read_to_string(&queue)
+            .unwrap()
+            .contains("https://pending")
+    );
+    assert!(
+        fs::read_to_string(&done)
+            .unwrap()
+            .contains("https://pending")
+    );
+
+    let retried = process_queue(&queue, &output, Mode::Retry, &executable).unwrap();
+    assert_eq!(retried.0, vec!["https://retry"]);
+    assert!(
+        !fs::read_to_string(&failed)
+            .unwrap()
+            .contains("https://retry")
+    );
+    assert!(fs::read_to_string(&done).unwrap().contains("https://retry"));
+
+    let verified = process_queue(&queue, &output, Mode::Verify, &executable).unwrap();
+    assert_eq!(verified.0, vec!["https://verify"]);
+    assert!(
+        fs::read_to_string(&done)
+            .unwrap()
+            .contains("https://verify")
+    );
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(failed);
+    let _ = fs::remove_file(done);
+    let _ = fs::remove_file(executable);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn plain_text_retry_failure_stays_failed_and_verify_failure_moves_to_failed() {
+    let queue = temp_path("yt-dlp-text-failure-state", ".txt");
+    let failed = companion_path(&queue, "failed");
+    let done = companion_path(&queue, "done");
+    let output = temp_path("yt-dlp-text-failure-output", "dir");
+    let executable = fake_downloader("failed", false);
+    fs::write(&failed, "https://retry-failure\n").unwrap();
+
+    let retried = process_queue(&queue, &output, Mode::Retry, &executable).unwrap();
+    assert_eq!(retried.1, vec!["https://retry-failure"]);
+    assert!(
+        fs::read_to_string(&failed)
+            .unwrap()
+            .contains("https://retry-failure")
+    );
+
+    fs::write(&done, "https://verify-failure\n").unwrap();
+    let verified = process_queue(&queue, &output, Mode::Verify, &executable).unwrap();
+    assert_eq!(verified.1, vec!["https://verify-failure"]);
+    assert!(
+        !fs::read_to_string(&done)
+            .unwrap()
+            .contains("https://verify-failure")
+    );
+    assert!(
+        fs::read_to_string(&failed)
+            .unwrap()
+            .contains("https://verify-failure")
+    );
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(failed);
+    let _ = fs::remove_file(done);
+    let _ = fs::remove_file(executable);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn plain_text_modes_ignore_missing_state_files() {
+    let queue = temp_path("yt-dlp-text-missing-state", ".txt");
+    let output = temp_path("yt-dlp-text-missing-state-output", "dir");
+    let executable = fake_downloader("unused", true);
+    fs::write(&queue, "https://pending\n").unwrap();
+
+    let retried = process_queue(&queue, &output, Mode::Retry, &executable).unwrap();
+    let verified = process_queue(&queue, &output, Mode::Verify, &executable).unwrap();
+    assert!(retried.0.is_empty());
+    assert!(retried.1.is_empty());
+    assert!(retried.2.is_empty());
+    assert!(verified.0.is_empty());
+    assert!(verified.1.is_empty());
+    assert!(verified.2.is_empty());
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(executable);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn process_queue_reports_text_state_read_errors() {
+    let queue = temp_path("yt-dlp-text-state-read-error", ".txt");
+    let done = companion_path(&queue, "done");
+    let output = temp_path("yt-dlp-text-state-read-error-output", "dir");
+    let executable = fake_downloader("ok", true);
+    fs::write(&queue, "https://pending\n").unwrap();
+    fs::create_dir(&done).unwrap();
+
+    let result = process_queue(&queue, &output, Mode::Download, &executable);
+    assert!(result.is_err());
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_dir_all(done);
+    let _ = fs::remove_file(executable);
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn cleanup_text_queue_is_no_op_when_all_state_files_are_missing() {
+    let queue = temp_path("yt-dlp-text-no-state", ".txt");
+
+    cleanup_queue(&queue).unwrap();
+    assert!(!queue.exists());
+
+    let _ = fs::remove_file(queue);
+}
+
+#[test]
+fn process_queue_reports_already_downloaded_links_as_skipped() {
+    let queue = temp_file("## Not downloaded yet\n- https://already\n");
+    let output = temp_path("yt-dlp-existing-output", "dir");
+    let executable = fake_downloader("has already been downloaded", true);
+
+    let result = process_queue(&queue, &output, Mode::Download, &executable).unwrap();
+    assert!(result.0.is_empty());
+    assert!(result.1.is_empty());
+    assert_eq!(result.2, vec!["https://already"]);
+
+    let _ = fs::remove_file(queue);
+    let _ = fs::remove_file(executable);
     let _ = fs::remove_dir_all(output);
 }
 

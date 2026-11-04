@@ -115,7 +115,7 @@ https://www.youtube.com/watch?v=dQw4w9WgXcQ
 https://youtu.be/aqz-KE-bpKQ
 ```
 
-Duplicate URLs are removed before processing. Successfully downloaded URLs are removed from the inbox, while failed URLs remain for a later run. Plain-text inboxes use normal download mode; the `--verify` and `--retry` modes apply to Markdown sections.
+Duplicate URLs are removed before processing. Plain-text queues use companion files beside the inbox: `queue.failed.txt` stores failed URLs and `queue.done.txt` stores successful URLs. Normal mode reads `queue.txt`, `--retry` reads `queue.failed.txt`, and `--verify` reads `queue.done.txt`; successful retries move to the done file, while failed retries remain in the failed file. Non-URL lines remain in their current file.
 
 ## Attribution
 
@@ -128,7 +128,7 @@ If you use this code in your own projects, attribution is required under the MIT
 ```text
 Based on yt-dlp-4me by Vadim Starichkov, TemplateTasks
 
-https://github.com/starichkov/yt-dlp-4me
+https://github.com/starichkov/yt-dlp-4me-rusty
 ```
 
 Copyright © 2026 Vadim Starichkov, TemplateTasks.
