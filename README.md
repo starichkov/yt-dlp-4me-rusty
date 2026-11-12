@@ -1,4 +1,4 @@
-# yt-dlp Markdown Wrapper (Rust)
+# yt-dlp Rust Wrapper
 
 [![Author](https://img.shields.io/badge/Author-Vadim%20Starichkov-blue?style=for-the-badge)](https://github.com/starichkov)
 [![GitHub License](https://img.shields.io/github/license/starichkov/yt-dlp-4me-rusty?style=for-the-badge)](https://github.com/starichkov/yt-dlp-4me-rusty/blob/main/LICENSE.md)
