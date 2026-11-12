@@ -2,7 +2,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEMP_PATH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn temp_file(content: &str) -> PathBuf {
     let path = temp_path("yt-dlp-test", "tmp");
@@ -12,11 +15,13 @@ pub fn temp_file(content: &str) -> PathBuf {
 
 pub fn temp_path(prefix: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
-        "{prefix}-{}-{suffix}",
+        "{prefix}-{}-{}-{}-{suffix}",
+        std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        TEMP_PATH_COUNTER.fetch_add(1, Ordering::Relaxed)
     ))
 }
 
