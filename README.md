@@ -10,14 +10,17 @@ A Rust command-line wrapper for [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) tha
 
 ## Features
 
-- Markdown-based queue with `Downloaded`, `Failed`, and `Not downloaded yet` sections.
+- Markdown-based queue with `Downloaded`, `Failed`, `Not downloaded yet`, and `Needs redownload` sections.
 - Automatic movement of links after successful or failed downloads.
-- Duplicate cleanup with downloaded links taking priority over failed and pending links.
-- Download, verify, and retry modes.
+- Duplicate cleanup with redownload and downloaded links taking priority over failed and pending links.
+- Download, verify, retry, and redownload modes.
+- Dedicated redownload mode using `bv*+ba/b` format selection.
 - Plain URLs, Markdown links, and list items are supported.
 - Live `yt-dlp` output and a session summary.
 - Relative paths and `~/` path expansion.
 - Custom `yt-dlp` executable paths.
+- Media integrity checks for MPEG-TS containers and decode errors.
+- In-place stream-copy repair for repairable media files.
 - No Rust runtime dependencies beyond the standard library.
 
 ## Requirements
@@ -68,6 +71,33 @@ Retry links currently in `## Failed`:
 yt-dlp-4me-rusty videos.md ./downloads --retry
 ```
 
+### Redownload mode
+
+Links for media that cannot be repaired can be placed in `## Needs redownload` and processed with a more reliable yt-dlp format selection:
+
+```bash
+yt-dlp-4me-rusty videos.md ./downloads --redownload
+```
+
+This invokes yt-dlp with `-f "bv*+ba/b"`. Media checks cannot infer the source URL from a filename, so unrepairable files should have their original queue links moved to `Needs redownload` before running this mode.
+
+### Media checks and repair
+
+Scan video files directly inside the output directory using `ffprobe` and `ffmpeg`:
+
+```bash
+yt-dlp-4me-rusty videos.md ./downloads --check-media
+yt-dlp-4me-rusty videos.md ./downloads --repair-media
+```
+
+The repair operation remuxes repairable files through a temporary file and replaces the original only after successful, non-empty output. H.264 diagnostics containing `missing picture in access unit` or `Invalid NAL unit size` are treated as unrepairable; those files are left unchanged and must be downloaded again. The tools can be selected with `--ffprobe-path PATH` and `--ffmpeg-path PATH`.
+
+Media checking and repair can be combined with `--verify`; media processing runs first, followed by verification of links in `## Downloaded`:
+
+```bash
+yt-dlp-4me-rusty videos.md ./downloads --verify --check-media --repair-media
+```
+
 ### Custom executable
 
 ```bash
@@ -89,6 +119,7 @@ Files with a `.md` extension use a stateful Markdown queue. The wrapper recogniz
 - `## Not downloaded yet` — links waiting for a normal download run.
 - `## Downloaded` — links that succeeded, and links inspected by verify mode.
 - `## Failed` — links that failed and are candidates for retry mode.
+- `## Needs redownload` — links whose downloaded media was unrepairable and must be fetched again.
 
 Other Markdown content is preserved. Links can be plain URLs or labeled Markdown links:
 

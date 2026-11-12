@@ -37,6 +37,24 @@ fn fake_downloader(success: bool) -> PathBuf {
     path
 }
 
+fn fake_media_tools() -> (PathBuf, PathBuf) {
+    let probe = unique_path("yt-dlp-cli-ffprobe");
+    let ffmpeg = unique_path("yt-dlp-cli-ffmpeg");
+    fs::write(&probe, "#!/bin/sh\nprintf 'mpegts\\n'\n").unwrap();
+    fs::write(
+        &ffmpeg,
+        "#!/bin/sh\nif [ \"$1\" = \"-v\" ]; then exit 0; fi\nprintf repaired > \"${11}\"\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    for path in [&probe, &ffmpeg] {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+    (probe, ffmpeg)
+}
+
 fn run_cli(args: &[&Path]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_yt-dlp-4me-rusty"))
         .args(args)
@@ -113,6 +131,43 @@ fn verify_and_retry_flags_select_the_expected_sections() {
     let _ = fs::remove_file(executable);
     let _ = fs::remove_dir_all(verify_output);
     let _ = fs::remove_dir_all(retry_output);
+}
+
+#[test]
+fn verify_can_be_combined_with_media_check_and_repair() {
+    let queue = unique_path("yt-dlp-cli-verify-media-queue");
+    let output = unique_path("yt-dlp-cli-verify-media-output");
+    let video = output.join("video.mp4");
+    let downloader = fake_downloader(true);
+    let (ffprobe, ffmpeg) = fake_media_tools();
+    fs::create_dir_all(&output).unwrap();
+    fs::write(&video, "input").unwrap();
+    fs::write(&queue, "## Downloaded\n- https://example.com/verify\n").unwrap();
+
+    let result = run_cli(&[
+        &queue,
+        &output,
+        Path::new("--verify"),
+        Path::new("--check-media"),
+        Path::new("--repair-media"),
+        Path::new("--yt-dlp-path"),
+        &downloader,
+        Path::new("--ffprobe-path"),
+        &ffprobe,
+        Path::new("--ffmpeg-path"),
+        &ffmpeg,
+    ]);
+
+    assert!(result.status.success());
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("Media summary: 0 OK, 1 repaired, 0 needing attention."));
+    assert!(stdout.contains("Successfully downloaded: 1"));
+    assert_eq!(fs::read_to_string(&video).unwrap(), "repaired");
+
+    for path in [queue, downloader, ffprobe, ffmpeg] {
+        let _ = fs::remove_file(path);
+    }
+    let _ = fs::remove_dir_all(output);
 }
 
 #[test]

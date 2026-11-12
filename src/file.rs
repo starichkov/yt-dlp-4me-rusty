@@ -145,6 +145,8 @@ fn header_kind(line: &str) -> Option<Section> {
         Some(Section::Failed)
     } else if name.starts_with(crate::PENDING.to_ascii_lowercase().as_str()) {
         Some(Section::Pending)
+    } else if name.starts_with(crate::REDOWNLOAD.to_ascii_lowercase().as_str()) {
+        Some(Section::Redownload)
     } else {
         Some(Section::Other)
     }

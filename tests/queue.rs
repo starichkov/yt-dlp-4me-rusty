@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use yt_dlp_4me_rusty::{
-    MarkdownFile, Mode, QueueFile, Section, TextFile, cleanup_markdown, cleanup_queue,
-    cleanup_text, download_video, expand_path, extract_link, move_link_to_section, parse_markdown,
-    parse_text, process_queue,
+    MarkdownFile, MediaStatus, Mode, QueueFile, RepairStatus, Section, TextFile,
+    check_video_with_tools, check_videos_with_tools, cleanup_markdown, cleanup_queue, cleanup_text,
+    download_video, expand_path, extract_link, move_link_to_section, parse_markdown, parse_text,
+    process_queue, repair_video_with_tools,
 };
 
 fn temp_file(content: &str) -> PathBuf {
@@ -58,6 +59,123 @@ fn fake_downloader(output: &str, success: bool) -> PathBuf {
         fs::set_permissions(&path, permissions).unwrap();
     }
     path
+}
+
+fn fake_media_tools(
+    probe_output: &str,
+    decode_output: &str,
+    decode_success: bool,
+) -> (PathBuf, PathBuf) {
+    let probe = temp_path("ffprobe-fake", "sh");
+    let ffmpeg = temp_path("ffmpeg-fake", "sh");
+    fs::write(
+        &probe,
+        format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", probe_output),
+    )
+    .unwrap();
+    fs::write(
+        &ffmpeg,
+        format!(
+            "#!/bin/sh\nif [ \"$7\" = \"-\" ]; then printf '%s' '{}' >&2; exit {}; fi\nprintf repaired > \"${{11}}\"\n",
+            decode_output,
+            if decode_success { 0 } else { 1 }
+        ),
+    )
+    .unwrap();
+    for path in [&probe, &ffmpeg] {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).unwrap();
+        }
+    }
+    (probe, ffmpeg)
+}
+
+#[test]
+fn media_check_distinguishes_repairable_and_unrepairable_corruption() {
+    let video = temp_path("video", "mp4");
+    fs::write(&video, "input").unwrap();
+    let (probe, ffmpeg) =
+        fake_media_tools("mov,mp4", "[h264] Invalid NAL unit size (-1 > 2).", false);
+    assert!(matches!(
+        check_video_with_tools(&video, &probe, &ffmpeg).unwrap(),
+        MediaStatus::Unrepairable(_)
+    ));
+    let (probe_ok, ffmpeg_ok) = fake_media_tools("mpegts", "", true);
+    assert!(matches!(
+        check_video_with_tools(&video, &probe_ok, &ffmpeg_ok).unwrap(),
+        MediaStatus::NeedsRepair(_)
+    ));
+    for path in [video, probe, ffmpeg, probe_ok, ffmpeg_ok] {
+        let _ = fs::remove_file(path);
+    }
+}
+
+#[test]
+fn redownload_mode_uses_reliable_format_and_moves_link_to_downloaded() {
+    let queue = temp_file("## Needs redownload\n- https://example.com/broken\n");
+    let output = temp_path("yt-dlp-redownload-output", "dir");
+    let arguments = temp_path("yt-dlp-redownload-arguments", "txt");
+    let executable = temp_path("yt-dlp-redownload", "sh");
+    fs::write(
+        &executable,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n",
+            arguments.display()
+        ),
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&executable).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable, permissions).unwrap();
+    }
+
+    let result = process_queue(&queue, &output, Mode::Redownload, &executable).unwrap();
+
+    assert_eq!(result.0, vec!["https://example.com/broken"]);
+    assert!(
+        fs::read_to_string(&queue)
+            .unwrap()
+            .contains("## Downloaded\n- https://example.com/broken")
+    );
+    let args = fs::read_to_string(&arguments).unwrap();
+    assert!(args.lines().any(|line| line == "-f"));
+    assert!(args.lines().any(|line| line == "bv*+ba/b"));
+
+    for path in [queue, arguments, executable] {
+        let _ = fs::remove_file(path);
+    }
+    let _ = fs::remove_dir_all(output);
+}
+
+#[test]
+fn media_scan_repairs_video_and_keeps_unrepairable_file_unchanged() {
+    let directory = temp_path("media-dir", "dir");
+    fs::create_dir(&directory).unwrap();
+    let video = directory.join("clip.MP4");
+    fs::write(&video, "input").unwrap();
+    let (probe, ffmpeg) = fake_media_tools("mpegts", "", true);
+    let scanned = check_videos_with_tools(&directory, &probe, &ffmpeg).unwrap();
+    assert_eq!(scanned.len(), 1);
+    assert!(matches!(scanned[0].1, MediaStatus::NeedsRepair(_)));
+    assert_eq!(
+        repair_video_with_tools(&video, &probe, &ffmpeg).unwrap(),
+        RepairStatus::Repaired
+    );
+    assert_eq!(fs::read_to_string(&video).unwrap(), "repaired");
+    for path in [directory, probe, ffmpeg] {
+        if path.is_dir() {
+            let _ = fs::remove_dir_all(path);
+        } else {
+            let _ = fs::remove_file(path);
+        }
+    }
 }
 
 #[test]
