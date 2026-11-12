@@ -59,6 +59,47 @@ fn media_classifier_selects_explicit_strategies() {
 }
 
 #[test]
+fn h264_bitstream_diagnostics_require_redownload() {
+    let diagnostics = [
+        "non-existing PPS 6 referenced",
+        "non-existing SPS 32 referenced in buffering period",
+        "sps_id 32 out of range",
+        "pps_id 1388 out of range",
+        "SEI type 47 size 215 truncated at 155",
+        "Picture timing SEI payload too large",
+        "illegal POC type 27",
+        "illegal reordering_of_pic_nums_idc 27",
+        "reference count 1 overflow",
+        "reference overflow (pps)",
+        "too many reference frames 32",
+        "log2_max_frame_num_minus4 out of range (0-12): 32",
+        "log2_max_poc_lsb (32) is out of range",
+        "crop values invalid 902 0 2 0 / 16 16",
+        "chroma_log2_weight_denom 8 is out of range",
+        "luma_log2_weight_denom 8 is out of range",
+        "cpb_count 32 invalid",
+        "Clipping illegal num_reorder_frames 32",
+        "delta scale 12 is invalid",
+    ];
+
+    for diagnostic in diagnostics {
+        assert!(
+            matches!(
+                classify_media("mov,mp4", true, false, diagnostic),
+                MediaStatus::Unrepairable(issue)
+                    if issue.strategy() == RepairStrategy::Redownload
+            ),
+            "diagnostic should require redownload: {diagnostic}"
+        );
+    }
+
+    assert!(matches!(
+        classify_media("mov,mp4", true, false, "SEI type 5 is present"),
+        MediaStatus::NeedsRepair(issue) if issue.strategy() == RepairStrategy::StreamCopy
+    ));
+}
+
+#[test]
 fn timestamp_warnings_are_repairable_and_validated_after_remux() {
     let video = temp_path("timestamp-video", "mp4");
     fs::write(&video, "input").unwrap();

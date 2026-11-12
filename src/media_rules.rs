@@ -20,6 +20,96 @@ struct DiagnosticRule {
 /// Known diagnostics ordered by classification precedence.
 const DIAGNOSTIC_RULES: &[DiagnosticRule] = &[
     DiagnosticRule {
+        marker: "non-existing pps",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "non-existing sps",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "sps_id",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "pps_id",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "picture timing sei payload too large",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "illegal poc type",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "illegal reordering_of_pic_nums_idc",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "reference count",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "reference overflow",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "too many reference frames",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "log2_max_frame_num_minus4 out of range",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "log2_max_poc_lsb",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "crop values invalid",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "chroma_log2_weight_denom",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "luma_log2_weight_denom",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "cpb_count",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "clipping illegal num_reorder_frames",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
+        marker: "delta scale",
+        strategy: RepairStrategy::Redownload,
+        valid_after_repair: false,
+    },
+    DiagnosticRule {
         marker: "missing picture in access unit",
         strategy: RepairStrategy::Redownload,
         valid_after_repair: false,
@@ -39,6 +129,9 @@ const DIAGNOSTIC_RULES: &[DiagnosticRule] = &[
 /// Classifies known `ffmpeg` diagnostics into a media issue.
 pub(crate) fn classify_diagnostics(diagnostics: &str) -> Option<MediaIssue> {
     let lower = diagnostics.to_ascii_lowercase();
+    if lower.contains("sei type") && lower.contains("truncated") {
+        return Some(MediaIssue::new(diagnostics, RepairStrategy::Redownload));
+    }
     DIAGNOSTIC_RULES
         .iter()
         .find(|rule| lower.contains(rule.marker))
