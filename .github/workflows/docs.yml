@@ -6,6 +6,7 @@ on:
     paths:
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'README.md'
       - 'src/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
@@ -32,18 +33,26 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
       - name: Build Rust documentation
         run: cargo doc --no-deps
 
-      - name: Add documentation landing page
+      - name: Render README landing page
         run: |
-          printf '%s\n' \
-            '<!doctype html>' \
-            '<meta charset="utf-8">' \
-            '<meta http-equiv="refresh" content="0; url=yt_dlp_4me_rusty/index.html">' \
-            '<title>yt-dlp-4me-rusty documentation</title>' \
-            '<a href="yt_dlp_4me_rusty/index.html">Open the Rust documentation</a>' \
-            > target/doc/index.html
+          {
+            printf '%s\n' \
+              '<!doctype html>' \
+              '<meta charset="utf-8">' \
+              '<meta name="viewport" content="width=device-width, initial-scale=1">' \
+              '<title>yt-dlp-4me-rusty</title>' \
+              '<style>body{max-width:960px;margin:2rem auto;padding:0 1rem;font:16px system-ui,sans-serif;line-height:1.5}img{max-width:100%}pre{overflow:auto;background:#f6f8fa;padding:1rem}code{font-family:ui-monospace,monospace}a{color:#0969da}</style>'
+            npx --yes marked README.md
+            printf '%s\n' '<p><a href="yt_dlp_4me_rusty/index.html">Rust API documentation</a></p>'
+          } > target/doc/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
