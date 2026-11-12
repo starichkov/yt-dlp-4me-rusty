@@ -1,0 +1,58 @@
+name: Deploy Rust Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust documentation
+        run: cargo doc --no-deps
+
+      - name: Add documentation landing page
+        run: |
+          printf '%s\n' \
+            '<!doctype html>' \
+            '<meta charset="utf-8">' \
+            '<meta http-equiv="refresh" content="0; url=yt_dlp_4me_rusty/index.html">' \
+            '<title>yt-dlp-4me-rusty documentation</title>' \
+            '<a href="yt_dlp_4me_rusty/index.html">Open the Rust documentation</a>' \
+            > target/doc/index.html
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload documentation
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './target/doc'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
