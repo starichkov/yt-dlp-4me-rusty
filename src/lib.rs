@@ -6,9 +6,15 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 mod file;
+mod media;
+mod media_rules;
 
 pub use file::{MarkdownFile, QueueFile, TextFile, extract_link, parse_markdown, parse_text};
 use file::{is_header, links_in_section, write_lines};
+pub use media::{
+    MediaIssue, MediaStatus, RepairStatus, RepairStrategy, check_video, check_video_with_tools,
+    check_videos, check_videos_with_tools, classify_media, repair_video, repair_video_with_tools,
+};
 
 /// Name of the section containing successfully downloaded links.
 pub const DOWNLOADED: &str = "Downloaded";
@@ -22,14 +28,20 @@ pub const REDOWNLOAD: &str = "Needs redownload";
 /// A logical section in the Markdown queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
+    /// Links that have been downloaded successfully.
     Downloaded,
+    /// Links whose most recent download attempt failed.
     Failed,
+    /// Links waiting for their first download attempt.
     Pending,
+    /// Links whose downloaded media should be downloaded again.
     Redownload,
+    /// Content outside a recognized queue section.
     Other,
 }
 
 impl Section {
+    /// Returns the canonical queue heading for a recognized section.
     fn name(self) -> Option<&'static str> {
         match self {
             Self::Downloaded => Some(DOWNLOADED),
@@ -40,6 +52,7 @@ impl Section {
         }
     }
 
+    /// Returns the Markdown heading used to create this section.
     fn header(self) -> Option<String> {
         self.name().map(|name| format!("## {name}"))
     }
@@ -48,164 +61,14 @@ impl Section {
 /// The operation to perform on the queue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
+    /// Download links from the pending section.
     Download,
+    /// Verify links already marked as downloaded.
     Verify,
+    /// Retry links from the failed section.
     Retry,
+    /// Re-download links from the needs-redownload section.
     Redownload,
-}
-
-/// The result of checking a media file with `ffprobe` and `ffmpeg`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MediaStatus {
-    /// The file has a recognized container and decoded without errors.
-    Ok,
-    /// The file can be considered for stream-copy repair.
-    NeedsRepair(String),
-    /// The file contains corruption that remuxing cannot repair.
-    Unrepairable(String),
-}
-
-/// The result of attempting to repair a media file.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RepairStatus {
-    /// The temporary repaired file replaced the original.
-    Repaired,
-    /// The file was not changed because its corruption is not repairable.
-    Unrepairable(String),
-    /// Repair was attempted but `ffmpeg` did not produce a valid output.
-    Failed(String),
-}
-
-const VIDEO_EXTENSIONS: [&str; 6] = ["mp4", "mkv", "ts", "webm", "mov", "avi"];
-
-/// Checks one media file using the supplied `ffprobe` and `ffmpeg` executables.
-pub fn check_video(path: impl AsRef<Path>) -> std::io::Result<MediaStatus> {
-    check_video_with_tools(path, Path::new("ffprobe"), Path::new("ffmpeg"))
-}
-
-/// Checks one media file using explicitly selected media tools.
-pub fn check_video_with_tools(
-    path: impl AsRef<Path>,
-    ffprobe: &Path,
-    ffmpeg: &Path,
-) -> std::io::Result<MediaStatus> {
-    let path = path.as_ref();
-    let probe = Command::new(ffprobe)
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=format_name",
-            "-of",
-            "default=nw=1:nk=1",
-        ])
-        .arg(path)
-        .output()?;
-    let format = String::from_utf8_lossy(&probe.stdout);
-    let decode = Command::new(ffmpeg)
-        .args(["-v", "error", "-i"])
-        .arg(path)
-        .args(["-f", "null", "-"])
-        .output()?;
-    let diagnostics = String::from_utf8_lossy(&decode.stderr).trim().to_owned();
-    if let Some(reason) = unrepairable_diagnostics(&diagnostics) {
-        return Ok(MediaStatus::Unrepairable(reason));
-    }
-    if format.contains("mpegts") {
-        return Ok(MediaStatus::NeedsRepair("MPEG-TS container".into()));
-    }
-    if !probe.status.success() || !decode.status.success() || !diagnostics.is_empty() {
-        return Ok(MediaStatus::NeedsRepair(if diagnostics.is_empty() {
-            "media decode failed".into()
-        } else {
-            diagnostics
-        }));
-    }
-    Ok(MediaStatus::Ok)
-}
-
-/// Scans direct video files in a directory and checks each one.
-pub fn check_videos(directory: impl AsRef<Path>) -> std::io::Result<Vec<(PathBuf, MediaStatus)>> {
-    check_videos_with_tools(directory, Path::new("ffprobe"), Path::new("ffmpeg"))
-}
-
-/// Scans direct video files using explicitly selected media tools.
-pub fn check_videos_with_tools(
-    directory: impl AsRef<Path>,
-    ffprobe: &Path,
-    ffmpeg: &Path,
-) -> std::io::Result<Vec<(PathBuf, MediaStatus)>> {
-    let mut files = std::fs::read_dir(directory.as_ref())?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file()
-                && path.extension().is_some_and(|extension| {
-                    VIDEO_EXTENSIONS
-                        .iter()
-                        .any(|known| extension.eq_ignore_ascii_case(known))
-                })
-        })
-        .collect::<Vec<_>>();
-    files.sort();
-    files
-        .into_iter()
-        .map(|path| check_video_with_tools(&path, ffprobe, ffmpeg).map(|status| (path, status)))
-        .collect()
-}
-
-/// Repairs one stream-copy-repairable media file in place.
-pub fn repair_video(path: impl AsRef<Path>) -> std::io::Result<RepairStatus> {
-    repair_video_with_tools(path, Path::new("ffprobe"), Path::new("ffmpeg"))
-}
-
-/// Repairs one media file using explicitly selected media tools.
-pub fn repair_video_with_tools(
-    path: impl AsRef<Path>,
-    ffprobe: &Path,
-    ffmpeg: &Path,
-) -> std::io::Result<RepairStatus> {
-    let path = path.as_ref();
-    let status = check_video_with_tools(path, ffprobe, ffmpeg)?;
-    let MediaStatus::NeedsRepair(reason) = status else {
-        return Ok(match status {
-            MediaStatus::Ok => RepairStatus::Failed("file does not need repair".into()),
-            MediaStatus::Unrepairable(reason) => RepairStatus::Unrepairable(reason),
-            MediaStatus::NeedsRepair(_) => unreachable!(),
-        });
-    };
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("video");
-    let temporary = path.with_file_name(format!(
-        "{}.fixed.{extension}",
-        path.file_stem().unwrap_or_default().to_string_lossy()
-    ));
-    let result = Command::new(ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
-        .arg(path)
-        .args(["-c", "copy", "-movflags", "+faststart"])
-        .arg(&temporary)
-        .output()?;
-    if !result.status.success() || !temporary.is_file() || std::fs::metadata(&temporary)?.len() == 0
-    {
-        let _ = std::fs::remove_file(&temporary);
-        return Ok(RepairStatus::Failed(format!(
-            "{reason}: ffmpeg repair failed"
-        )));
-    }
-    std::fs::rename(temporary, path)?;
-    Ok(RepairStatus::Repaired)
-}
-
-fn unrepairable_diagnostics(diagnostics: &str) -> Option<String> {
-    let lower = diagnostics.to_ascii_lowercase();
-    if lower.contains("missing picture in access unit") || lower.contains("invalid nal unit size") {
-        Some(diagnostics.to_owned())
-    } else {
-        None
-    }
 }
 
 /// Expands a leading `~` using the current user's home directory.

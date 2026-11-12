@@ -90,7 +90,7 @@ yt-dlp-4me-rusty videos.md ./downloads --check-media
 yt-dlp-4me-rusty videos.md ./downloads --repair-media
 ```
 
-The repair operation remuxes repairable files through a temporary file and replaces the original only after successful, non-empty output. H.264 diagnostics containing `missing picture in access unit` or `Invalid NAL unit size` are treated as unrepairable; those files are left unchanged and must be downloaded again. The tools can be selected with `--ffprobe-path PATH` and `--ffmpeg-path PATH`.
+The repair operation remuxes repairable files through a temporary file, validates the result with both `ffprobe` and a decoding pass, and replaces the original only after successful, non-empty output. Non-monotonic DTS warnings are considered repairable; H.264 diagnostics containing `missing picture in access unit` or `Invalid NAL unit size` are treated as unrepairable. Failed validation leaves the original unchanged. The tools can be selected with `--ffprobe-path PATH` and `--ffmpeg-path PATH`.
 
 Media checking and repair can be combined with `--verify`; media processing runs first, followed by verification of links in `## Downloaded`:
 
@@ -135,7 +135,7 @@ Other Markdown content is preserved. Links can be plain URLs or labeled Markdown
 ## Failed
 ```
 
-Before processing, duplicate links are removed. A link in `Downloaded` wins over the same link in `Failed`, and a link in `Failed` wins over one still pending.
+Before processing, duplicate links are removed. A link in `Needs redownload` wins over the same link in `Downloaded`, `Failed`, or pending sections; `Downloaded` then wins over `Failed`, and `Failed` wins over pending.
 
 ### Plain text
 

@@ -101,15 +101,15 @@ fn process_media(
                 ok += 1;
                 println!("OK: {}", path.display());
             }
-            MediaStatus::Unrepairable(reason) => {
+            MediaStatus::Unrepairable(issue) => {
                 failed += 1;
-                println!("UNREPAIRABLE: {} ({reason})", path.display());
+                println!("UNREPAIRABLE: {} ({})", path.display(), issue.reason());
             }
-            MediaStatus::NeedsRepair(reason) if repair => {
+            MediaStatus::NeedsRepair(issue) if repair => {
                 match repair_video_with_tools(&path, ffprobe, ffmpeg)? {
                     RepairStatus::Repaired => {
                         repaired += 1;
-                        println!("REPAIRED: {} ({reason})", path.display());
+                        println!("REPAIRED: {} ({})", path.display(), issue.reason());
                     }
                     RepairStatus::Unrepairable(reason) | RepairStatus::Failed(reason) => {
                         failed += 1;
@@ -117,9 +117,9 @@ fn process_media(
                     }
                 }
             }
-            MediaStatus::NeedsRepair(reason) => {
+            MediaStatus::NeedsRepair(issue) => {
                 failed += 1;
-                println!("NEEDS REPAIR: {} ({reason})", path.display());
+                println!("NEEDS REPAIR: {} ({})", path.display(), issue.reason());
             }
         }
     }
